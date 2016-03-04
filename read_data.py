@@ -128,40 +128,8 @@ def get_corefs(data_dict):
                 mentions[mentions.index(m)] = new_m
     return sorted(mentions, key=lambda x: (x[0], x[1], x[2]))
 
-# Don't use this
-def get_all_mentions(data_dict, corefs):
-    """ Get all the NPs from the document.
-
-    We don't actually need this since the coref spans in the data
-    designate mentions. Also, some mentions could be NPs.
-    """
-    # return (n_sent, start, end, coref) # if not coreferent, None
-    mentions = []
-    nps = [] # (n_sent, np_tree) tuples
-    for outer_k, outer_v in data_dict.iteritems():
-        for inner_k, inner_v in outer_v.iteritems():
-            if inner_k == 'tree':
-                trees = list(inner_v.subtrees(filter=lambda x: x.label() == 'NP'))
-                nps.extend([(outer_k, t) for t in trees])
-    for np in nps:
-        n_sent = np[0]
-        np_tokens = np[1].leaves()
-        sent_tokens = data_dict[n_sent]['tokens']
-        start = sent_tokens.index(np_tokens[0])
-        end = sent_tokens.index(np_tokens[-1])
-        # determine anaphoricity
-        coref = False
-        for c in corefs:
-            if (n_sent, start, end) == c[:3]:
-                mentions.append((n_sent, start, end, c[-1]))
-                coref = True
-        if not coref:
-            mentions.append((n_sent, start, end, None))
-    mentions = list(set(mentions))
-    return sorted(mentions, key=lambda x: (x[0], x[1], x[2]))
-
 def make_mention_dict(mention, data_dict):
-    """Given a 4-tuple created by `read_data.get_corefs` or
+    """Given a 4-tuple created by `get_corefs` or
     `read_data.get_all_mentions, return a featurizable dict."""
     m_dict = {}
     m_sent_num = mention[0]
