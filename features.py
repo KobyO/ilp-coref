@@ -1,5 +1,7 @@
 import nltk.tree
 
+""" Feature functions for pairwise coreference classifier. """
+
 SING_PRONOUNS = ['i', 'you', 'he', 'she', 'it', 'me', 'him', 'her', 'his',
                  'my', 'myself', 'yourself', 'himself', 'herself', 'ourselves']
 PL_PRONOUNS = ['you', 'we', 'they', 'us', 'them' 'yourselves',

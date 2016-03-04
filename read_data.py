@@ -158,4 +158,3 @@ def pprint_dict(d):
 
 def extract_digit(string):
     return int(''.join([c for c in string if c.isdigit()]))
-

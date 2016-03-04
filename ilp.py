@@ -89,18 +89,6 @@ def fvec(i, j, d, v):
     fv = v.transform(feat_dict)
     return fv
 
-def generate_links_file(model, test_doc, vectorizer=None, first_match=True, ilp=False):
-    """ Returns list of lists of predicted coref links. Each list corresponds
-    to a part of the document.
-    """
-    dicts = make_data_dict(test_doc)
-    doc_links = []
-    for d in dicts:
-        doc_links.append(
-            generate_links(model, d, vectorizer=vectorizer,
-                 first_match=first_match, ilp=ilp))
-    return doc_links
-
 def generate_links(model, data_dict, vectorizer= None,
                    first_match=True, ilp=False):
     # for each mention, work backwards and add a link for all previous
@@ -115,6 +103,7 @@ def generate_links(model, data_dict, vectorizer= None,
     links = []
     rev_c = c[::-1]
 
+    #TODO clean up this horribly ugly code.
     if ilp:
         # reverse the list of mentions to be in correct order for testing
         rev_c_idx = [(i,m) for i,m in enumerate(rev_c)]
@@ -158,6 +147,13 @@ def generate_links(model, data_dict, vectorizer= None,
     return links
 
 def partition_links(links):
+    """ Given a list of mention pairs determined to be coreferent,
+    create a partitioning of the set of entities (i.e., number the
+    coreference chains.
+    """
+    #TODO Fix the logic here. Although the method (seemingly) works,
+    # there is an error in the implementation which forces the terrible
+    # brute force approach here.
     subpart = []
     seen = []
     for link in links:
@@ -190,6 +186,18 @@ def partition_links(links):
                     seen.append(link[1])
     return subpart
 
+def generate_links_file(model, test_doc, vectorizer=None, first_match=True, ilp=False):
+    """ Returns list of lists of predicted coref links. Each list corresponds
+    to a part of the document.
+    """
+    dicts = make_data_dict(test_doc)
+    doc_links = []
+    for d in dicts:
+        doc_links.append(
+            generate_links(model, d, vectorizer=vectorizer,
+                 first_match=first_match, ilp=ilp))
+    return doc_links
+
 def write_all_test_output(data_dir, model, vectorizer,
                           first_match=True, ilp=False):
     test_docs = glob.glob(data_dir + '/*conll')
@@ -198,7 +206,10 @@ def write_all_test_output(data_dir, model, vectorizer,
                                         first_match=first_match, ilp=ilp)
         write_test_output(doc_links, doc)
 
-def create_test_files(response_dir):
+def create_master_test_files(response_dir):
+    """ Given the directory full of key and response files, generate
+    a single master.response and master.key file for scoring.
+    """
     responses = glob.glob(response_dir + '/*.response')
     keys = glob.glob(response_dir + '/*.key')
     assert len(responses) == len(keys)
