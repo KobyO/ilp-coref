@@ -3,6 +3,7 @@ import glob
 import numpy as np
 import cPickle
 
+from datetime import datetime
 from tqdm import tqdm
 from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
 from sklearn.feature_extraction import DictVectorizer
@@ -89,7 +90,7 @@ def fvec(i, j, d, v):
     fv = v.transform(feat_dict)
     return fv
 
-def generate_links(model, data_dict, vectorizer= None,
+def generate_links(model, data_dict, vectorizer=None,
                    first_match=True, ilp=False):
     # for each mention, work backwards and add a link for all previous
     # which the clasifier deems coreferent (first_match=False)
@@ -105,32 +106,59 @@ def generate_links(model, data_dict, vectorizer= None,
 
     #TODO clean up this horribly ugly code.
     if ilp:
+        start_time = datetime.now()
         # reverse the list of mentions to be in correct order for testing
+        # this gives us a list of pairs (idx, (sent, start, end, coref))
+        # where idx increments from the end of the document to the beginning
         rev_c_idx = [(i,m) for i,m in enumerate(rev_c)]
-        # cartesian product of mentions where m_i > m_j, i.e.,
-        # m_i occurs in doc before m_j
+        # cartesian product of mentions
         pairs = [(m_i, m_j) for m_j in rev_c_idx for m_i in rev_c_idx
                  if m_i > m_j]
         # dict of i_j: featurevector
         m_idx = {str(i[0])+'_'+str(j[0]): fvec(i[1], j[1], d, v) for i,j in pairs}
-        # list of x_ij variable string names
-        x_vars = [ij for ij in m_idx.keys()]
-        # dict of i_j: p(i_j)
+        # dicts of model probabilites
         p = {ij: model.predict_proba(fv)[0][1] for ij, fv in m_idx.items()}
         log_p = {ij: np.log(pr) for ij, pr in p.items()}
         log_not_p = {ij: np.log(1-pr) for ij, pr in p.items()}
+
+        # declaring the ILP problem
+        print "\nDeclaring ILP problem with {} mentions...".format(len(c))
+        # list of x_ij variable string names
+        x_vars = [ij for ij in m_idx.keys()]
         x = LpVariable.dicts("x", x_vars, cat='Binary')
         problem = LpProblem('coref', LpMaximize)
-        problem += lpSum([log_p[idx] * x[idx] + log_not_p[idx] * x[idx]
+        # the objective function to be maximized
+        problem += lpSum([log_p[idx] * x[idx] + log_not_p[idx] * (1-x[idx])
                           for idx in m_idx.keys()])
+
         # add transitivty constraint
-        trips = []
-        for ij in x:
-            for jk in x:
-                if ij.split('_')[1] == jk.split('_')[0]:
-                    trips.append((ij,jk,ij.split('_')[0]+'_'+jk.split('_')[1]))
-        for ij,jk,ik in trips:
-            problem += (1-x[ij]) + (1-x[jk]) >= (1-x[ik])
+        print "Adding transitivity constraint..."
+        pairs_idx = [(pair[0][0], pair[1][0]) for pair in pairs]
+        constraints = []
+        for i,j in tqdm(pairs_idx):
+            x_ij = x['{}_{}'.format(i,j)]
+            for k in range(0,j):
+                x_jk = x['{}_{}'.format(j,k)]
+                x_ik = x['{}_{}'.format(i,k)]
+                constraints.append(
+                    LpAffineExpression((1-x_ij) + (1-x_jk)) >= (1-x_ik))
+        cdict = OrderedDict()
+        for i,constraint in enumerate(constraints):
+            cdict['_C{}'.format(i)] = constraint
+        problem.constraints = cdict
+
+        # solve the problem
+        print "Solving..."
+        problem.solve()
+        print "Solved!"
+
+        # get the pairs that are coreferent now
+        coref_idxs = [var.name.split('_')[1:] for var in problem.variables()
+                      if var.varValue == 1]
+        links = [(rev_c_idx[int(cidx[0])], rev_c_idx[int(cidx[1])])
+                 for cidx in coref_idxs]
+        links = [(l[0][1], l[1][1]) for l in links]
+        print "Solving took {}".format(datetime.now() - start_time)
 
     else:
         rev_c_idx = [(i,m) for i,m in enumerate(rev_c)]
@@ -144,6 +172,7 @@ def generate_links(model, data_dict, vectorizer= None,
                         break
                     else:
                         continue
+
     return links
 
 def partition_links(links):
@@ -151,9 +180,6 @@ def partition_links(links):
     create a partitioning of the set of entities (i.e., number the
     coreference chains.
     """
-    #TODO Fix the logic here. Although the method (seemingly) works,
-    # there is an error in the implementation which forces the terrible
-    # brute force approach here.
     subpart = []
     seen = []
     for link in links:
@@ -163,7 +189,7 @@ def partition_links(links):
             seen.append(link[1])
         else:
             in_subpart = False
-            for i,part in enumerate(subpart):
+            for part in subpart:
                 if link[0] in part and link[1] not in part:
                     if link[1] not in seen:
                         part.append(link[1])
@@ -186,7 +212,7 @@ def partition_links(links):
                     seen.append(link[1])
     return subpart
 
-def generate_links_file(model, test_doc, vectorizer=None, first_match=True, ilp=False):
+def doc_generate_links(model, test_doc, vectorizer=None, first_match=True, ilp=False):
     """ Returns list of lists of predicted coref links. Each list corresponds
     to a part of the document.
     """
@@ -202,7 +228,7 @@ def write_all_test_output(data_dir, model, vectorizer,
                           first_match=True, ilp=False):
     test_docs = glob.glob(data_dir + '/*conll')
     for doc in tqdm(test_docs):
-        doc_links = generate_links_file(model, doc, vectorizer=vectorizer,
+        doc_links = doc_generate_links(model, doc, vectorizer=vectorizer,
                                         first_match=first_match, ilp=ilp)
         write_test_output(doc_links, doc)
 
@@ -281,3 +307,24 @@ def write_test_output(doc_links, test_doc):
                 outf.write('\t'.join(line)+'\n')
             else:
                 outf.write(line)
+
+def set_up_test_env():
+    model = cPickle.load(open('no_wc_classifier.pkl'))
+    v = cPickle.load(open('no_wc_vectorizer.pkl'))
+    d = make_data_dict('../conll-2012/test/english/annotations/wb/eng/00/eng_0009.v4_gold_conll')
+    d = d[2]
+    c = get_corefs(d)
+    rev_c = c[::-1]
+    rev_c_idx = [(i,m) for i,m in enumerate(rev_c)]
+    pairs = [(m_i, m_j) for m_j in rev_c_idx for m_i in rev_c_idx if m_i > m_j]
+    m_idx = {str(i[0])+'_'+str(j[0]): fvec(i[1], j[1], d, v) for i,j in pairs}
+    p = {pair:model.predict_proba(fv)[0][1] for pair, fv in m_idx.items()}
+    log_p = {pair:np.log(pr) for pair, pr in p.items()}
+    log_not_p = {pair:np.log(1-pr) for pair, pr in p.items()}
+    x_vars = [ij for ij in m_idx.keys()]
+    x = LpVariable.dicts("x",x_vars, cat='Binary')
+    problem = LpProblem('coref', LpMaximize)
+    problem += lpSum([log_p[idx] * x[idx] + log_not_p[idx] * (1-x[idx]) for idx
+                      in m_idx.keys()])
+    pairs_idx = [(pair[0][0], pair[1][0]) for pair in pairs]
+    return model,v,d,c,rev_c,rev_c_idx,pairs,m_idx,p,log_p,log_not_p,x_vars,x,problem
