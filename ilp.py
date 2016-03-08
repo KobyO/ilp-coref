@@ -92,6 +92,8 @@ def fvec(i, j, d, v):
 
 def generate_links(model, data_dict, vectorizer=None,
                    first_match=True, ilp=False):
+    """Returns a list of pairs of mentions determined to be
+    coreferent by the model."""
     # for each mention, work backwards and add a link for all previous
     # which the clasifier deems coreferent (first_match=False)
     #
@@ -135,16 +137,15 @@ def generate_links(model, data_dict, vectorizer=None,
         print "Adding transitivity constraint..."
         pairs_idx = [(pair[0][0], pair[1][0]) for pair in pairs]
         constraints = []
-        for i,j in tqdm(pairs_idx):
+        cdict = OrderedDict()
+        n_pairs = len(pairs_idx)
+        for m,(i,j) in tqdm(enumerate(pairs_idx), total=n_pairs):
             x_ij = x['{}_{}'.format(i,j)]
             for k in range(0,j):
                 x_jk = x['{}_{}'.format(j,k)]
                 x_ik = x['{}_{}'.format(i,k)]
-                constraints.append(
-                    LpAffineExpression((1-x_ij) + (1-x_jk)) >= (1-x_ik))
-        cdict = OrderedDict()
-        for i,constraint in enumerate(constraints):
-            cdict['_C{}'.format(i)] = constraint
+                cdict['_C{}'.format(m)] = \
+                    LpAffineExpression((1-x_ij) + (1-x_jk)) >= (1-x_ik)
         problem.constraints = cdict
 
         # solve the problem
@@ -178,7 +179,7 @@ def generate_links(model, data_dict, vectorizer=None,
 def partition_links(links):
     """ Given a list of mention pairs determined to be coreferent,
     create a partitioning of the set of entities (i.e., number the
-    coreference chains.
+    coreference chains).
     """
     subpart = []
     seen = []

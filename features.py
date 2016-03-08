@@ -22,8 +22,8 @@ def featurize(m_i, m_j, data_dict):
     Categorical variables are turned into strings so they
     will be one-hot encoded by dictvectorizer later
     """
-    i_str = m_i['string'].lower().strip('.,?!:;')
-    j_str = m_j['string'].lower().strip('.,?!:;')
+    i_str = m_i['string'].lower()
+    j_str = m_j['string'].lower()
     fdict = {
         #'strmatch': strmatch(i_str, j_str),
         'word_str': word_str(m_i, m_j),
@@ -47,7 +47,8 @@ def featurize(m_i, m_j, data_dict):
         'agree': agree(m_i, m_j),
         #'maximal_np': maximal_np(m_i, m_j),
         'head_match': head_match(m_i, m_j),
-        'animacy_match': animacy_match(m_i, m_j)
+        'animacy_match': animacy_match(m_i, m_j),
+        'appositive': appositive(m_j)
     }
     return fdict
 
@@ -56,13 +57,13 @@ def head(m):
     m_toks = m['string'].split()
     m_pos = m['pos'].split()
     if len(m_pos) == 1:
-        m_head = m['string'].strip('.,?!:;')
+        m_head = m['string']
         return m_head
     head_pos = ['POS', 'NN', 'NNS', 'NNP', 'NNPS', 'PRP', 'PRP$']
     for pos in head_pos:
         for mp in m_pos:
             if mp == pos:
-                m_head = m_toks[m_pos.index(mp)].strip('.,?!:;')
+                m_head = m_toks[m_pos.index(mp)]
                 return m_head
     return '<unk>'
 
@@ -71,26 +72,26 @@ def animacy_match(m_i, m_j):
     j_head = head(m_j)
     a_i = animate(i_head)
     a_j = animate(j_head)
-    if a_i == a_j:
-        if a_i != 'unk':
+    if a_i != 'unk' and a_j != 'unk':
+        if a_i == a_j:
             return '1'
         else:
-            return 'unk'
-    return '0'
+            return '0'
+    return 'unk'
 
 animacy_cache = {}
 def animate(m):
     if m.lower() in animacy_cache:
         return animacy_cache[m.lower()]
     if m in M_NAME_SET or m in F_NAME_SET:
-        animacy_cache[m] = True
-        return True
+        animacy_cache[m] = '1'
+        return '1'
     anim_pros = [pro for pro in SING_PRONOUNS + PL_PRONOUNS]
     anim_pros.remove('it')
     anim_pros.remove('itself')
     if m.lower() in anim_pros:
-        animacy_cache[m] = True
-        return True
+        animacy_cache[m] = '1'
+        return '1'
     hyper = lambda s: s.hypernyms()
     try:
         m_syn = wn.synsets(m, 'n')[0]
@@ -99,11 +100,11 @@ def animate(m):
         return 'unk'
     closure = m_syn.closure(hyper)
     if wn.synset('living_thing.n.01') in closure:
-        animacy_cache[m] = True
-        return True
+        animacy_cache[m] = '1'
+        return '1'
     else:
-        animacy_cache[m] = False
-        return False
+        animacy_cache[m] = '0'
+        return '0'
     animacy_cache[m] = 'unk'
     return 'unk'
 
@@ -123,8 +124,8 @@ def maximal_np(m_i, m_j):
     if m_i['sent_num'] != m_j['sent_num']:
         return 0
     t = m_j['tree']
-    i_str = m_i['string'].strip('.,?!:;')
-    j_str = m_j['string'].strip('.,?!:;')
+    i_str = m_i['string']
+    j_str = m_j['string']
     maxnp = list(t.subtrees(filter=lambda x: x.label() == 'NP' and \
                 i_str in x.leaves() and j_str in x.leaves()))
     if maxnp:
@@ -158,16 +159,16 @@ def pro_str(i_str, j_str):
     return 0
 
 def prop_str(m_i, m_j):
-    i_str = m_i['string'].strip('.,?!:;')
-    j_str = m_j['string'].strip('.,?!:;')
+    i_str = m_i['string']
+    j_str = m_j['string']
     if proper(i_str) and proper(j_str):
         if i_str == j_str:
             return 1
     return 0
 
 def word_str(m_i, m_j):
-    i_str = m_i['string'].strip('.,?!:;')
-    j_str = m_j['string'].strip('.,?!:;')
+    i_str = m_i['string']
+    j_str = m_j['string']
     if not (pronoun(i_str.lower()) or pronoun(j_str.lower())):
         if not (proper(i_str) or proper(j_str)):
             if truncate_str(i_str).lower() == truncate_str(j_str).lower():
@@ -217,15 +218,15 @@ def dem_np(j_str):
     return 1 if j_str.split()[0] in dems else 0
 
 def proper(m_str):
-    m_toks = m_str.strip('.,?!:;').split()
+    m_toks = m_str.split()
     for t in m_toks:
         if not t[0].isupper() or not t[1:].islower():
             return False
     return True
 
 def check_both_proper(m_i, m_j):
-    i_str = m_i['string'].strip('.,?!:;')
-    j_str = m_j['string'].strip('.,?!:;')
+    i_str = m_i['string']
+    j_str = m_j['string']
     if proper(i_str) and proper(j_str):
         return 1
     return 0
@@ -233,7 +234,7 @@ def check_both_proper(m_i, m_j):
 def is_subject(m_i, d):
     subj = find_subject(m_i['tree'])
     if subj:
-        if subj.leaves() == m_i['string'].strip('.,?!:;').split():
+        if subj.leaves() == m_i['string'].split():
             return 1
     return 0
 
@@ -260,9 +261,9 @@ def gender_agr(m_i, m_j):
         return 'unk'
 
 def gender(m):
-    feminine = ['she', 'her', 'miss', 'mrs', 'ms', 'lady',
+    feminine = ['miss', 'mrs.', 'ms.', 'she', 'her', 'lady',
                 'woman', 'girl', 'ma\'am']
-    masculine = ['he', 'him', 'his', 'mr', 'sir', 'man', 'boy']
+    masculine = ['mr.', 'he', 'him', 'his', 'sir', 'man', 'boy']
     m_head = head(m)
     if m_head.lower() in feminine:
         return 'fem'
@@ -277,30 +278,32 @@ def gender(m):
 
 def appositive(m_j):
     tokens = m_j['string'].split()
+    t = m_j['tree']
     a = list(t.subtrees(filter=lambda x:
                     (x.label() == 'NP' and len(x) == 3 and x[0].label() == 'NP'
                      and x[1].label() == ',' and x[2].label() == 'NP'
-                     and [t for t in tokens if t in x[2].leaves()] is not None)))
+                     and x[2].leaves() == tokens)))
     return 1 if a else 0
 
 def number(m):
-    toks = m['string'].lower().split()
-    for tok in toks[::-1]:
-        if tok in SING_PRONOUNS:
-            return 'singular'
-        elif tok in PL_PRONOUNS:
-            return 'plural'
-    pos_list = [pos.strip('.,?!:;') for pos in m['pos'].split()]
-    p = ['NN', 'NNS', 'NNP', 'NNPS']
-    pmatches = []
-    for pos in pos_list[::-1]:
-        if pos in p:
-            if pos.endswith('S'):
-                pmatches.append('plural')
-            pmatches.append('singular')
-    pset = set(pmatches)
-    if len(pset) == 1:
-        return pset.pop()
+    m_head = head(m)
+    if m_head == '<unk>':
+        return 'unk'
+    if m_head in SING_PRONOUNS:
+        return 'singular'
+    elif m_head in PL_PRONOUNS:
+        return 'plural'
+    elif m_head in M_NAME_SET:
+        return 'singular'
+    elif m_head in F_NAME_SET:
+        return 'singular'
+    pos_list = [pos.strip() for pos in m['pos'].split()]
+    m_pos = pos_list[m['string'].split().index(m_head)]
+    pl_pos = ['NNS', 'NNPS']
+    if m_pos in pl_pos:
+        return 'plural'
+    elif not not m_pos in pl_pos:
+        return 'singular'
     else:
         return 'unk'
 
